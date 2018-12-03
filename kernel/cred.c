@@ -228,26 +228,13 @@ void exit_creds(struct task_struct *tsk)
 const struct cred *get_task_cred(struct task_struct *task)
 {
 	const struct cred *cred;
-#ifdef CONFIG_KDP_CRED
-	int inc_test;
-#endif
 
 	rcu_read_lock();
-#ifdef CONFIG_KDP_CRED
 	do {
 		cred = __task_cred((task));
 		BUG_ON(!cred);
-		if (is_kdp_protect_addr((unsigned long)cred))
-			inc_test = ROCRED_UC_INC_NOT_ZERO(cred);
-		else
-			inc_test = atomic_inc_not_zero(&((struct cred *)cred)->usage);
-	} while (!inc_test);
-#else
-	do {
-		cred = __task_cred((task));
-		BUG_ON(!cred);
-	} while (!atomic_inc_not_zero(&((struct cred *)cred)->usage));
-#endif
+	} while (!get_cred_rcu(cred));
+
 	rcu_read_unlock();
 	return cred;
 }
