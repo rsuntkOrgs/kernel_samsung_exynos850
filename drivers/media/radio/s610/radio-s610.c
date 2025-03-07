@@ -1655,12 +1655,12 @@ static int s610_radio_fops_open(struct file *file)
 #if defined(CONFIG_SOC_EXYNOS7885) || defined(CONFIG_SOC_EXYNOS9610)
 			abox_request_cpu_gear_sync(radio->a_dev,
 				dev_get_drvdata(radio->a_dev),
-				(unsigned int)radio->dev,
+				(unsigned long)radio->dev,
 				ABOX_CPU_GEAR_MAX);
 #elif defined(CONFIG_SOC_EXYNOS9630) || defined(CONFIG_SOC_EXYNOS3830)
 			abox_request_cpu_gear_sync(radio->a_dev,
 				dev_get_drvdata(radio->a_dev),
-				(unsigned int)radio->dev,
+				(unsigned long)radio->dev,
 				ABOX_CPU_GEAR_MAX, "FM");
 #endif /* defined(CONFIG_SOC_EXYNOS7885) || defined(CONFIG_SOC_EXYNOS3830) */
 		}
@@ -1783,12 +1783,12 @@ static int s610_radio_fops_release(struct file *file)
 #if defined(CONFIG_SOC_EXYNOS7885) || defined(CONFIG_SOC_EXYNOS9610)
 			abox_request_cpu_gear_sync(radio->a_dev,
 				dev_get_drvdata(radio->a_dev),
-				(unsigned int)radio->dev,
+				(unsigned long)radio->dev,
 				ABOX_CPU_GEAR_MIN);
 #elif defined(CONFIG_SOC_EXYNOS9630) || defined(CONFIG_SOC_EXYNOS3830)
 			abox_request_cpu_gear_sync(radio->a_dev,
 				dev_get_drvdata(radio->a_dev),
-				(unsigned int)radio->dev,
+				(unsigned long)radio->dev,
 				ABOX_CPU_GEAR_MIN, "FM");
 #endif /* defined(CONFIG_SOC_EXYNOS7885) || defined(CONFIG_SOC_EXYNOS3830) */
 			pm_runtime_put_sync(radio->a_dev);
