@@ -206,7 +206,6 @@ obj-$(CONFIG_SEC_EXT)		+= samsung/
 obj-y				+= sensors/
 
 # OLOG
-obj-y				+= kperfmon/
 obj-y += regulator/pmic_class/ # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
 obj-y += security/samsung/icdrv/ # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
 obj-y += misc/drb/ # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
