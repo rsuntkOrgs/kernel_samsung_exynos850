@@ -1013,10 +1013,15 @@ static int find_prog_type(enum bpf_prog_type type, struct bpf_prog *prog)
 /* drop refcnt on maps used by eBPF program and free auxilary data */
 static void free_used_maps(struct bpf_prog_aux *aux)
 {
+	enum bpf_cgroup_storage_type stype;
 	int i;
 
-	if (aux->cgroup_storage)
-		bpf_cgroup_storage_release(aux->prog, aux->cgroup_storage);
+	for_each_cgroup_storage_type(stype) {
+		if (!aux->cgroup_storage[stype])
+			continue;
+		bpf_cgroup_storage_release(aux->prog,
+					   aux->cgroup_storage[stype]);
+	}
 
 	for (i = 0; i < aux->used_map_cnt; i++)
 		bpf_map_put(aux->used_maps[i]);
@@ -1647,8 +1652,13 @@ static int bpf_prog_attach(const union bpf_attr *attr)
 	case BPF_SK_SKB_STREAM_VERDICT:
 		ptype = BPF_PROG_TYPE_SK_SKB;
 		break;
+	case BPF_FLOW_DISSECTOR:
+		ptype = BPF_PROG_TYPE_FLOW_DISSECTOR;
+		break;
 	case BPF_LIRC_MODE2:
 		ptype = BPF_PROG_TYPE_LIRC_MODE2;
+	case BPF_CGROUP_SYSCTL:
+		ptype = BPF_PROG_TYPE_CGROUP_SYSCTL;
 		break;
 	default:
 		return -EINVAL;
@@ -1723,8 +1733,13 @@ static int bpf_prog_detach(const union bpf_attr *attr)
 	case BPF_SK_SKB_STREAM_PARSER:
 	case BPF_SK_SKB_STREAM_VERDICT:
 		return sockmap_get_from_fd(attr, BPF_PROG_TYPE_SK_SKB, NULL);
+	case BPF_FLOW_DISSECTOR:
+		return skb_flow_dissector_bpf_prog_detach(attr);
 	case BPF_LIRC_MODE2:
 		return lirc_prog_detach(attr);
+	case BPF_CGROUP_SYSCTL:
+		ptype = BPF_PROG_TYPE_CGROUP_SYSCTL;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -1760,6 +1775,7 @@ static int bpf_prog_query(const union bpf_attr *attr,
 	case BPF_CGROUP_UDP6_RECVMSG:
 	case BPF_CGROUP_SOCK_OPS:
 	case BPF_CGROUP_DEVICE:
+	case BPF_CGROUP_SYSCTL:
 		break;
 	case BPF_LIRC_MODE2:
 		return lirc_prog_query(attr, uattr);

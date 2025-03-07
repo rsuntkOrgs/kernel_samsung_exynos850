@@ -127,6 +127,7 @@ enum bpf_map_type {
 	BPF_MAP_TYPE_SOCKHASH,
 	BPF_MAP_TYPE_CGROUP_STORAGE,
 	BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
+    BPF_MAP_TYPE_DEVMAP_HASH = 25,
 };
 
 enum bpf_prog_type {
@@ -152,6 +153,8 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_LWT_SEG6LOCAL,
 	BPF_PROG_TYPE_LIRC_MODE2,
 	BPF_PROG_TYPE_SK_REUSEPORT,
+    BPF_PROG_TYPE_FLOW_DISSECTOR = 22,
+	BPF_PROG_TYPE_CGROUP_SYSCTL = 23,
 };
 
 enum bpf_attach_type {
@@ -172,6 +175,8 @@ enum bpf_attach_type {
 	BPF_CGROUP_UDP4_SENDMSG,
 	BPF_CGROUP_UDP6_SENDMSG,
 	BPF_LIRC_MODE2,
+	BPF_FLOW_DISSECTOR = 17,
+	BPF_CGROUP_SYSCTL = 18,
 	BPF_CGROUP_UDP4_RECVMSG = 19,
 	BPF_CGROUP_UDP6_RECVMSG,
 	__MAX_BPF_ATTACH_TYPE
@@ -283,6 +288,8 @@ struct bpf_stack_build_id {
 		__u64	ip;
 	};
 };
+/* Flags for accessing BPF object from program side. */
+#define BPF_F_RDONLY_PROG	(1U << 7)
 
 union bpf_attr {
 	struct { /* anonymous struct used by BPF_MAP_CREATE command */
@@ -2301,6 +2308,12 @@ enum bpf_lwt_encap_mode {
 	BPF_LWT_ENCAP_SEG6_INLINE
 };
 
+#define __bpf_md_ptr(type, name)	\
+union {					\
+	type name;			\
+	__u64 :64;			\
+} __attribute__((aligned(8)))
+
 /* user accessible mirror of in-kernel sk_buff.
  * new fields can only be added to the end of this structure
  */
@@ -2332,6 +2345,7 @@ struct __sk_buff {
 	__u32 local_ip6[4];	/* Stored in network byte order */
 	__u32 remote_port;	/* Stored in network byte order */
 	__u32 local_port;	/* stored in host byte order */
+	__bpf_md_ptr(struct bpf_flow_keys *, flow_keys);
 	/* ... here. */
 
 	__u32 data_meta;
@@ -2433,8 +2447,8 @@ enum sk_action {
  * be added to the end of this structure
  */
 struct sk_msg_md {
-	void *data;
-	void *data_end;
+	__bpf_md_ptr(void *, data);
+	__bpf_md_ptr(void *, data_end);
 
 	__u32 family;
 	__u32 remote_ip4;	/* Stored in network byte order */
@@ -2450,8 +2464,9 @@ struct sk_reuseport_md {
 	 * Start of directly accessible data. It begins from
 	 * the tcp/udp header.
 	 */
-	void *data;
-	void *data_end;		/* End of directly accessible data */
+	 __bpf_md_ptr(void *, data);
+	 /* End of directly accessible data */
+	 __bpf_md_ptr(void *, data_end);
 	/*
 	 * Total length of packet (starting from the tcp/udp header).
 	 * Note that the directly accessible bytes (data_end - data)
@@ -2705,6 +2720,29 @@ struct bpf_raw_tracepoint_args {
 	__u64 args[0];
 };
 
+struct bpf_flow_keys {
+	__u16	nhoff;
+	__u16	thoff;
+	__u16	addr_proto;			/* ETH_P_* of valid addrs */
+	__u8	is_frag;
+	__u8	is_first_frag;
+	__u8	is_encap;
+	__u8	ip_proto;
+	__be16	n_proto;
+	__be16	sport;
+	__be16	dport;
+	union {
+		struct {
+			__be32	ipv4_src;
+			__be32	ipv4_dst;
+		};
+		struct {
+			__u32	ipv6_src[4];	/* in6_addr; network order */
+			__u32	ipv6_dst[4];	/* in6_addr; network order */
+		};
+	};
+};
+
 /* DIRECT:  Skip the FIB rules and go to FIB table associated with device
  * OUTPUT:  Do lookup from egress perspective; default is ingress
  */
@@ -2779,6 +2817,12 @@ enum bpf_task_fd_type {
 	BPF_FD_TYPE_KRETPROBE,		/* (symbol + offset) or addr */
 	BPF_FD_TYPE_UPROBE,		/* filename + offset */
 	BPF_FD_TYPE_URETPROBE,		/* filename + offset */
+};
+
+struct bpf_sysctl {
+	__u32	write;		/* Sysctl is being read (= 0) or written (= 1).
+				 * Allows 1,2,4-byte read, but no write.
+				 */
 };
 
 #endif /* _UAPI__LINUX_BPF_H__ */

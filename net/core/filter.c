@@ -3237,20 +3237,6 @@ void xdp_do_flush_map(void)
 }
 EXPORT_SYMBOL_GPL(xdp_do_flush_map);
 
-static void *__xdp_map_lookup_elem(struct bpf_map *map, u32 index)
-{
-	switch (map->map_type) {
-	case BPF_MAP_TYPE_DEVMAP:
-		return __dev_map_lookup_elem(map, index);
-	case BPF_MAP_TYPE_CPUMAP:
-		return __cpu_map_lookup_elem(map, index);
-	case BPF_MAP_TYPE_XSKMAP:
-		return __xsk_map_lookup_elem(map, index);
-	default:
-		return NULL;
-	}
-}
-
 void bpf_clear_redirect_map(struct bpf_map *map)
 {
 	struct bpf_redirect_info *ri;
@@ -3279,7 +3265,10 @@ static int xdp_do_redirect_map(struct net_device *dev, struct xdp_buff *xdp,
 	ri->ifindex = 0;
 	WRITE_ONCE(ri->map, NULL);
 
-	fwd = __xdp_map_lookup_elem(map, index);
+	if (map->map_type == BPF_MAP_TYPE_DEVMAP)
+		fwd = __dev_map_lookup_elem(map, index);
+	else if (map->map_type == BPF_MAP_TYPE_DEVMAP_HASH)
+		fwd = __dev_map_hash_lookup_elem(map, index);
 	if (!fwd) {
 		err = -EINVAL;
 		goto err;
@@ -3344,7 +3333,11 @@ static int xdp_do_generic_redirect_map(struct net_device *dev,
 	ri->ifindex = 0;
 	WRITE_ONCE(ri->map, NULL);
 
-	fwd = __xdp_map_lookup_elem(map, index);
+	if (map->map_type == BPF_MAP_TYPE_DEVMAP)
+		fwd = __dev_map_lookup_elem(map, index);
+	else if (map->map_type == BPF_MAP_TYPE_DEVMAP_HASH)
+		fwd = __dev_map_hash_lookup_elem(map, index);
+
 	if (unlikely(!fwd)) {
 		err = -EINVAL;
 		goto err;
@@ -5105,6 +5098,17 @@ sk_skb_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 }
 
 static const struct bpf_func_proto *
+flow_dissector_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	switch (func_id) {
+	case BPF_FUNC_skb_load_bytes:
+		return &bpf_skb_load_bytes_proto;
+	default:
+		return bpf_base_func_proto(func_id);
+	}
+}
+
+static const struct bpf_func_proto *
 lwt_out_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
 	switch (func_id) {
@@ -5222,6 +5226,10 @@ static bool bpf_skb_is_valid_access(int off, int size, enum bpf_access_type type
 		if (size != size_default)
 			return false;
 		break;
+	case bpf_ctx_range_ptr(struct __sk_buff, flow_keys):
+		if (size != sizeof(__u64))
+			return false;
+		break;
 	default:
 		/* Only narrow read access allowed for now. */
 		if (type == BPF_WRITE) {
@@ -5247,6 +5255,7 @@ static bool sk_filter_is_valid_access(int off, int size,
 	case bpf_ctx_range(struct __sk_buff, data):
 	case bpf_ctx_range(struct __sk_buff, data_meta):
 	case bpf_ctx_range(struct __sk_buff, data_end):
+	case bpf_ctx_range_ptr(struct __sk_buff, flow_keys):
 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
 		return false;
 	}
@@ -5270,6 +5279,7 @@ static bool lwt_is_valid_access(int off, int size,
 {
 	switch (off) {
 	case bpf_ctx_range(struct __sk_buff, tc_classid):
+	case bpf_ctx_range_ptr(struct __sk_buff, flow_keys):
 	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
 	case bpf_ctx_range(struct __sk_buff, data_meta):
 		return false;
@@ -5357,21 +5367,27 @@ static bool __sock_filter_check_size(int off, int size,
 	return size == size_default;
 }
 
-static bool sock_filter_is_valid_access(int off, int size,
-					enum bpf_access_type type,
-					const struct bpf_prog *prog,
-					struct bpf_insn_access_aux *info)
+bool bpf_sock_is_valid_access(int off, int size, enum bpf_access_type type,
+			      struct bpf_insn_access_aux *info)
 {
 	if (off < 0 || off >= sizeof(struct bpf_sock))
 		return false;
 	if (off % size != 0)
 		return false;
-	if (!__sock_filter_check_attach_type(off, type,
-					     prog->expected_attach_type))
-		return false;
 	if (!__sock_filter_check_size(off, size, info))
 		return false;
 	return true;
+}
+
+static bool sock_filter_is_valid_access(int off, int size,
+					enum bpf_access_type type,
+					const struct bpf_prog *prog,
+					struct bpf_insn_access_aux *info)
+{
+	if (!bpf_sock_is_valid_access(off, size, type, info))
+		return false;
+	return __sock_filter_check_attach_type(off, type,
+					       prog->expected_attach_type);
 }
 
 static int bpf_unclone_prologue(struct bpf_insn *insn_buf, bool direct_write,
@@ -5701,6 +5717,8 @@ static bool sk_skb_is_valid_access(int off, int size,
 
 	switch (off) {
 	case bpf_ctx_range(struct __sk_buff, mark):
+	case bpf_ctx_range_ptr(struct __sk_buff, flow_keys):
+	case bpf_ctx_range(struct __sk_buff, tc_classid):
 		return false;
 	case bpf_ctx_range(struct __sk_buff, data):
 		info->reg_type = PTR_TO_PACKET;
@@ -5710,6 +5728,36 @@ static bool sk_skb_is_valid_access(int off, int size,
 		break;
 	}
 
+	return bpf_skb_is_valid_access(off, size, type, prog, info);
+}
+
+static bool flow_dissector_is_valid_access(int off, int size,
+					   enum bpf_access_type type,
+					   const struct bpf_prog *prog,
+					   struct bpf_insn_access_aux *info)
+{
+	if (type == BPF_WRITE) {
+		switch (off) {
+		case bpf_ctx_range_till(struct __sk_buff, cb[0], cb[4]):
+			break;
+		default:
+			return false;
+		}
+	}
+	switch (off) {
+	case bpf_ctx_range(struct __sk_buff, data):
+		info->reg_type = PTR_TO_PACKET;
+		break;
+	case bpf_ctx_range(struct __sk_buff, data_end):
+		info->reg_type = PTR_TO_PACKET_END;
+		break;
+	case bpf_ctx_range_ptr(struct __sk_buff, flow_keys):
+		info->reg_type = PTR_TO_FLOW_KEYS;
+		break;
+	case bpf_ctx_range(struct __sk_buff, tc_classid):
+	case bpf_ctx_range_till(struct __sk_buff, family, local_port):
+		return false;
+	}
 	return bpf_skb_is_valid_access(off, size, type, prog, info);
 }
 
@@ -6048,15 +6096,23 @@ static u32 bpf_convert_ctx_access(enum bpf_access_type type,
 				      bpf_target_off(struct sock_common,
 						     skc_num, 2, target_size));
 		break;
+	case offsetof(struct __sk_buff, flow_keys):
+		off  = si->off;
+		off -= offsetof(struct __sk_buff, flow_keys);
+		off += offsetof(struct sk_buff, cb);
+		off += offsetof(struct qdisc_skb_cb, flow_keys);
+		*insn++ = BPF_LDX_MEM(BPF_SIZEOF(void *), si->dst_reg,
+				      si->src_reg, off);
+		break;
 	}
 
 	return insn - insn_buf;
 }
 
-static u32 sock_filter_convert_ctx_access(enum bpf_access_type type,
-					  const struct bpf_insn *si,
-					  struct bpf_insn *insn_buf,
-					  struct bpf_prog *prog, u32 *target_size)
+u32 bpf_sock_convert_ctx_access(enum bpf_access_type type,
+				const struct bpf_insn *si,
+				struct bpf_insn *insn_buf,
+				struct bpf_prog *prog, u32 *target_size)
 {
 	struct bpf_insn *insn = insn_buf;
 	int off;
@@ -6968,7 +7024,7 @@ const struct bpf_prog_ops lwt_seg6local_prog_ops = {
 const struct bpf_verifier_ops cg_sock_verifier_ops = {
 	.get_func_proto		= sock_filter_func_proto,
 	.is_valid_access	= sock_filter_is_valid_access,
-	.convert_ctx_access	= sock_filter_convert_ctx_access,
+	.convert_ctx_access	= bpf_sock_convert_ctx_access,
 };
 
 const struct bpf_prog_ops cg_sock_prog_ops = {
@@ -7000,6 +7056,14 @@ const struct bpf_verifier_ops sk_skb_verifier_ops = {
 };
 
 const struct bpf_prog_ops sk_skb_prog_ops = {
+};
+
+const struct bpf_verifier_ops flow_dissector_verifier_ops = {
+	.get_func_proto		= flow_dissector_func_proto,
+	.is_valid_access	= flow_dissector_is_valid_access,
+	.convert_ctx_access	= bpf_convert_ctx_access,
+};
+const struct bpf_prog_ops flow_dissector_prog_ops = {
 };
 
 const struct bpf_verifier_ops sk_msg_verifier_ops = {

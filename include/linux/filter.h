@@ -33,6 +33,8 @@ struct bpf_prog_aux;
 struct xdp_rxq_info;
 struct xdp_buff;
 struct sock_reuseport;
+struct ctl_table;
+struct ctl_table_header;
 
 /* ArgX, context and stack frame pointer register positions. Note,
  * Arg1, Arg2, Arg3, etc are used as argument mappings of function
@@ -445,6 +447,14 @@ struct sock_reuseport;
 	offsetof(TYPE, MEMBER) ... offsetofend(TYPE, MEMBER) - 1
 #define bpf_ctx_range_till(TYPE, MEMBER1, MEMBER2)				\
 	offsetof(TYPE, MEMBER1) ... offsetofend(TYPE, MEMBER2) - 1
+
+#if BITS_PER_LONG == 64
+# define bpf_ctx_range_ptr(TYPE, MEMBER)					\
+	offsetof(TYPE, MEMBER) ... offsetofend(TYPE, MEMBER) - 1
+#else
+# define bpf_ctx_range_ptr(TYPE, MEMBER)					\
+	offsetof(TYPE, MEMBER) ... offsetof(TYPE, MEMBER) + 8 - 1
+#endif /* BITS_PER_LONG == 64 */
 
 #define bpf_target_off(TYPE, MEMBER, SIZE, PTR_SIZE)				\
 	({									\
@@ -1157,6 +1167,12 @@ struct bpf_sock_ops_kern {
 					 * sock_ops_convert_ctx_access
 					 * as temporary storage of a register.
 					 */
+};
+
+struct bpf_sysctl_kern {
+	struct ctl_table_header *head;
+	struct ctl_table *table;
+	int write;
 };
 
 #endif /* __LINUX_FILTER_H__ */

@@ -60,6 +60,8 @@ struct bpf_reg_state {
 	 * offset, so they can share range knowledge.
 	 * For PTR_TO_MAP_VALUE_OR_NULL this is used to share which map value we
 	 * came from, when one is tested for != NULL.
+	 * For PTR_TO_SOCKET this is used to share which pointers retain the
+	 * same reference to the socket, to determine proper reference freeing.
 	 */
 	u32 id;
 	/* Ordering of fields matters.  See states_equal() */
@@ -136,6 +138,17 @@ struct bpf_verifier_state {
 	u32 curframe;
 	bool speculative;
 };
+
+#define bpf_get_spilled_reg(slot, frame)				\
+	(((slot < frame->allocated_stack / BPF_REG_SIZE) &&		\
+	  (frame->stack[slot].slot_type[0] == STACK_SPILL))		\
+	 ? &frame->stack[slot].spilled_ptr : NULL)
+
+/* Iterate over 'frame', setting 'reg' to either NULL or a spilled register. */
+#define bpf_for_each_spilled_reg(iter, frame, reg)			\
+	for (iter = 0, reg = bpf_get_spilled_reg(iter, frame);		\
+	     iter < frame->allocated_stack / BPF_REG_SIZE;		\
+	     iter++, reg = bpf_get_spilled_reg(iter, frame))
 
 /* linked list of verifier states used to prune search */
 struct bpf_verifier_state_list {
