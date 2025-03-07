@@ -202,9 +202,6 @@ obj-$(CONFIG_VISION_SUPPORT)	+= vision/
 
 obj-$(CONFIG_SEC_EXT)		+= samsung/
 
-# uH
-obj-$(CONFIG_UH)		+= uh/
-
 # sensor driver
 obj-y				+= sensors/
 

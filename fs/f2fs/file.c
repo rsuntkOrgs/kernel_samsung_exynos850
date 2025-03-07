@@ -32,10 +32,6 @@
 #include <trace/events/f2fs.h>
 #include <trace/events/android_fs.h>
 
-#ifdef CONFIG_FSCRYPT_SDP
-#include <linux/fscrypto_sdp_ioctl.h>
-#endif
-
 static vm_fault_t f2fs_filemap_fault(struct vm_fault *vmf)
 {
 	struct inode *inode = file_inode(vmf->vma->vm_file);
@@ -3591,16 +3587,6 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return f2fs_ioc_get_valid_node_count(filp, arg);
 	case F2FS_IOC_STAT_COMPRESS_FILE:
 		return f2fs_ioc_stat_compress_file(filp, arg);
-#ifdef CONFIG_FSCRYPT_SDP
-	case FS_IOC_GET_SDP_INFO:
-	case FS_IOC_SET_SDP_POLICY:
-	case FS_IOC_SET_SENSITIVE:
-	case FS_IOC_SET_PROTECTED:
-	case FS_IOC_ADD_CHAMBER:
-	case FS_IOC_REMOVE_CHAMBER:
-	case FS_IOC_DUMP_FILE_KEY:
-		return fscrypt_sdp_ioctl(filp, cmd, arg);
-#endif
 	default:
 		return -ENOTTY;
 	}
@@ -3760,15 +3746,6 @@ long f2fs_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case F2FS_IOC_SET_VOLUME_NAME:
 	case F2FS_IOC_GET_VALID_NODE_COUNT:
 	case F2FS_IOC_STAT_COMPRESS_FILE:
-#ifdef CONFIG_FSCRYPT_SDP
-	case FS_IOC_GET_SDP_INFO:
-	case FS_IOC_SET_SDP_POLICY:
-	case FS_IOC_SET_SENSITIVE:
-	case FS_IOC_SET_PROTECTED:
-	case FS_IOC_ADD_CHAMBER:
-	case FS_IOC_REMOVE_CHAMBER:
-	case FS_IOC_DUMP_FILE_KEY:
-#endif
 		break;
 	default:
 		return -ENOIOCTLCMD;
