@@ -291,7 +291,7 @@ handle_lto() {
 # call summary
 pr_sum
 if [ "$BUILD" = "kernel" ]; then
-	pr_step "2" "3" "Building targets ($BUILD) with lto=$LTO"
+	pr_step "2" "3" "Building targets ($BUILD) with lto=$LTO @ $ALLOC_JOB job(s)"
 	make -j`echo $ALLOC_JOB` -C $(pwd) O=$(pwd)/out `echo $DEFAULT_ARGS` `echo $BUILD_DEFCONFIG`
 	[ "$KERNELSU" = "true" ] && setconfig enable KSU
 	[ "$LTO" != "none" ] && handle_lto || pr_info "LTO not set";
