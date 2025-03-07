@@ -453,6 +453,8 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -Werror=return-type -Wno-format-security \
 		   -std=gnu89
+# Rissu: Silent -Wunused-but-set-variable warnings
+KBUILD_CFLAGS += -Wno-unused-but-set-variable
 KBUILD_CPPFLAGS := -D__KERNEL__
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
