@@ -1357,6 +1357,9 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
+	/* task is frozen/stopped (used by the cgroup freezer) */
+	unsigned			frozen:1;
+
 #ifdef CONFIG_SEC_DEBUG_COMPLETE_HINT
 	struct completion		*x;
 #endif
