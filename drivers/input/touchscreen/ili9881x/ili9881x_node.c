@@ -1371,7 +1371,7 @@ int ili_get_tp_recore_data(void)
 	u8 buf[8] = {0}, record_case = 0;
 	s8 index;
 	u16 *raw = NULL, *raw_ptr = NULL, frame_len = 0;
-	u32 base_addr = 0x20000, addr, len, *ptr, i, fcnt;
+	u32 base_addr = 0x20000, addr, len, i, fcnt;
 	struct record_state record_stat;
 	bool ice = atomic_read(&ilits->ice_stat);
 
@@ -1395,7 +1395,6 @@ int ili_get_tp_recore_data(void)
 		input_err(true, ilits->dev, "%s Failed to allocate packet memory, %ld\n", __func__, PTR_ERR(raw));
 		return -1;
 	}
-	ptr = (u32 *)raw;
 
 	if (!ice)
 		ili_ice_mode_ctrl(ENABLE, ON);
@@ -2536,7 +2535,7 @@ proc_node iliproc[] = {
 
 void ili_node_init(void)
 {
-	int i = 0, ret = 0;
+	int i = 0;
 
 	proc_dir_ilitek = proc_mkdir("ilitek", NULL);
 
@@ -2546,7 +2545,6 @@ void ili_node_init(void)
 		if (iliproc[i].node == NULL) {
 			iliproc[i].isCreated = false;
 			input_err(true, ilits->dev, "%s Failed to create %s under /proc\n", __func__, iliproc[i].name);
-			ret = -ENODEV;
 		} else {
 			iliproc[i].isCreated = true;
 			input_info(true, ilits->dev, "%s Succeed to create %s under /proc\n",
