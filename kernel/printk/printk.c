@@ -103,7 +103,7 @@ enum devkmsg_log_masks {
 };
 
 /* Keep both the 'on' and 'off' bits clear, i.e. ratelimit by default: */
-#define DEVKMSG_LOG_MASK_DEFAULT	DEVKMSG_LOG_MASK_ON
+#define DEVKMSG_LOG_MASK_DEFAULT	0
 
 static unsigned int __read_mostly devkmsg_log = DEVKMSG_LOG_MASK_DEFAULT;
 
@@ -451,17 +451,31 @@ static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
 static char *log_buf = __log_buf;
 static u32 log_buf_len = __LOG_BUF_LEN;
 
+/*
+ * We cannot access per-CPU data (e.g. per-CPU flush irq_work) before
+ * per_cpu_areas are initialised. This variable is set to true when
+ * it's safe to access per-CPU data.
+ */
+static bool __printk_percpu_data_ready __read_mostly;
+
+bool printk_percpu_data_ready(void)
+{
+	return __printk_percpu_data_ready;
+}
+
 /* Return log buffer address */
 char *log_buf_addr_get(void)
 {
 	return log_buf;
 }
+EXPORT_SYMBOL_GPL(log_buf_addr_get);
 
 /* Return log buffer size */
 u32 log_buf_len_get(void)
 {
 	return log_buf_len;
 }
+EXPORT_SYMBOL_GPL(log_buf_len_get);
 
 /* human readable text of the record */
 static char *log_text(const struct printk_log *msg)
@@ -598,7 +612,6 @@ void register_set_auto_comm_buf(void (*func)(int type, const char *buf, size_t s
 	func_hook_auto_comm = func;
 }
 #endif
-
 #ifdef CONFIG_SEC_DEBUG_INIT_LOG
 static void (*func_hook_init_log)(const char *buf, size_t size);
 void register_init_log_hook_func(void (*func)(const char *buf, size_t size))
@@ -626,7 +639,6 @@ void register_hook_logbuf(void (*func)(const char *buf, size_t size, int fatal))
 	if (log_first_seq != log_next_seq) {
 		unsigned int step_seq, step_idx, start, end;
 		struct printk_log *msg;
-
 		start = log_first_seq;
 		end = log_next_seq;
 		step_idx = log_first_idx;
@@ -644,7 +656,7 @@ void register_hook_logbuf(void (*func)(const char *buf, size_t size, int fatal))
 EXPORT_SYMBOL(register_hook_logbuf);
 #endif
 
-#ifdef CONFIG_SEC_DEBUG_FIRST2M_LOG
+#if defined(CONFIG_SEC_DEBUG_FIRST2M_LOG)
 void (*func_hook_first_kmsg)(const char *buf, size_t size);
 void register_first_kmsg_hook_func(void (*func)(const char *buf, size_t size))
 {
@@ -672,7 +684,6 @@ void register_first_kmsg_hook_func(void (*func)(const char *buf, size_t size))
 	}
 	func_hook_first_kmsg = func;
 	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
-
 }
 #endif
 
@@ -745,13 +756,11 @@ static int log_store(int facility, int level,
 	memcpy(log_dict(msg), dict, dict_len);
 	msg->dict_len = dict_len;
 	msg->facility = facility;
-
 #ifdef CONFIG_SEC_DEBUG_AUTO_COMMENT
 	msg->for_auto_comment = (level / 10 == 9) ? 1 : 0;
 	msg->type_auto_comment = (level / 10 == 9) ? level - LOGLEVEL_PR_AUTO_BASE : 0;
 	level = (msg->for_auto_comment) ? 0 : level;
 #endif
-
 	msg->level = level & 7;
 	msg->flags = flags & 0x1f;
 	if (ts_nsec > 0)
@@ -776,21 +785,9 @@ static int log_store(int facility, int level,
 				true, hook_text, LOG_LINE_MAX + PREFIX_MAX);
 		func_hook_logbuf(hook_text, hook_size,
 				msg->level <= LOGLEVEL_ERR ? 1 : 0);
-
 #ifdef CONFIG_SEC_DEBUG_AUTO_COMMENT
 		if (msg->for_auto_comment && func_hook_auto_comm)
 			func_hook_auto_comm(msg->type_auto_comment, hook_text, hook_size);
-#endif
-
-#ifdef CONFIG_SEC_DEBUG_INIT_LOG
-		/* user log only */
-		if (msg->facility && task_pid_nr(current) == 1 && func_hook_init_log)
-			func_hook_init_log(hook_text, hook_size);
-#endif
-
-#ifdef CONFIG_SEC_DEBUG_FIRST2M_LOG
-		if (func_hook_first_kmsg)
-			func_hook_first_kmsg(hook_text, hook_size);
 #endif
 	}
 #endif
@@ -921,7 +918,7 @@ struct devkmsg_user {
 
 static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 {
-	char buf[LOG_LINE_MAX + 1], *line;
+	char *buf, *line;
 	int level = default_message_loglevel;
 	int facility = 1;	/* LOG_USER */
 	struct file *file = iocb->ki_filp;
@@ -937,10 +934,15 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 		return len;
 
 	/* Ratelimit when not explicitly enabled. */
+	/*
 	if (!(devkmsg_log & DEVKMSG_LOG_MASK_ON)) {
 		if (!___ratelimit(&user->rs, current->comm))
 			return ret;
 	}
+	*/
+	buf = kmalloc(len+1, GFP_KERNEL);
+	if (buf == NULL)
+		return -ENOMEM;
 
 	buf[len] = '\0';
 	if (!copy_from_iter_full(buf, len, from)) {
@@ -974,6 +976,7 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 	}
 
 	printk_emit(facility, level, NULL, 0, "%s", line);
+	kfree(buf);
 	return ret;
 }
 
@@ -1255,11 +1258,27 @@ static void __init log_buf_add_cpu(void)
 static inline void log_buf_add_cpu(void) {}
 #endif /* CONFIG_SMP */
 
+static void __init set_percpu_data_ready(void)
+{
+	printk_safe_init();
+	/* Make sure we set this flag only after printk_safe() init is done */
+	barrier();
+	__printk_percpu_data_ready = true;
+}
+
 void __init setup_log_buf(int early)
 {
 	unsigned long flags;
 	char *new_log_buf;
 	unsigned int free;
+
+	/*
+	 * Some archs call setup_log_buf() multiple times - first is very
+	 * early, e.g. from setup_arch(), and second - when percpu_areas
+	 * are initialised.
+	 */
+	if (!early)
+		set_percpu_data_ready();
 
 	if (log_buf != __log_buf)
 		return;
@@ -1459,9 +1478,13 @@ static size_t msg_print_text(const struct printk_log *msg, bool syslog, char *bu
 
 static int syslog_print(char __user *buf, int size)
 {
-	char text[LOG_LINE_MAX + PREFIX_MAX];
+	char *text;
 	struct printk_log *msg;
 	int len = 0;
+
+	text = kmalloc(LOG_LINE_MAX + PREFIX_MAX, GFP_KERNEL);
+	if (!text)
+		return -ENOMEM;
 
 	while (size > 0) {
 		size_t n;
@@ -1510,6 +1533,7 @@ static int syslog_print(char __user *buf, int size)
 		buf += n;
 	}
 
+	kfree(text);
 	return len;
 }
 
@@ -1534,7 +1558,6 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 		 */
 		seq = clear_seq;
 		idx = clear_idx;
-
 		while (seq < log_next_seq) {
 			struct printk_log *msg = log_from_idx(idx);
 
@@ -1546,7 +1569,6 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 		/* move first record forward until length fits into the buffer */
 		seq = clear_seq;
 		idx = clear_idx;
-
 		while (len > size && seq < log_next_seq) {
 			struct printk_log *msg = log_from_idx(idx);
 
@@ -1586,10 +1608,11 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 			}
 		}
 	}
+
 	if (clear) {
 		clear_seq = log_next_seq;
 		clear_idx = log_next_idx;
-    }
+	}
 	logbuf_unlock_irq();
 
 	kfree(text);
@@ -1704,6 +1727,7 @@ int do_syslog(int type, char __user *buf, int len, int source)
 		error = -EINVAL;
 		break;
 	}
+
 	return error;
 }
 
@@ -2133,6 +2157,9 @@ static int __init console_setup(char *str)
 	char *s, *options, *brl_options = NULL;
 	int idx;
 
+	if (str[0] == 0)
+		return 1;
+
 	if (_braille_console_setup(&str, &brl_options))
 		return 1;
 
@@ -2185,7 +2212,7 @@ int add_preferred_console(char *name, int idx, char *options)
 	return __add_preferred_console(name, idx, options, NULL);
 }
 
-bool console_suspend_enabled = false;
+bool console_suspend_enabled = true;
 EXPORT_SYMBOL(console_suspend_enabled);
 
 static int __init console_suspend_disable(char *str)
@@ -2920,6 +2947,9 @@ static DEFINE_PER_CPU(struct irq_work, wake_up_klogd_work) = {
 
 void wake_up_klogd(void)
 {
+	if (!printk_percpu_data_ready())
+		return;
+
 	preempt_disable();
 	if (waitqueue_active(&log_wait)) {
 		this_cpu_or(printk_pending, PRINTK_PENDING_WAKEUP);
@@ -2930,6 +2960,9 @@ void wake_up_klogd(void)
 
 void defer_console_output(void)
 {
+	if (!printk_percpu_data_ready())
+		return;
+
 	preempt_disable();
 	__this_cpu_or(printk_pending, PRINTK_PENDING_OUTPUT);
 	irq_work_queue(this_cpu_ptr(&wake_up_klogd_work));
