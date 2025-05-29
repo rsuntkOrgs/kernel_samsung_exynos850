@@ -36,7 +36,6 @@
 
 #include <linux/input/mt.h>
 #include <linux/interrupt.h>
-#include <linux/moduleparam.h>
 #include "synaptics_tcm_core.h"
 
 #define TYPE_B_PROTOCOL
