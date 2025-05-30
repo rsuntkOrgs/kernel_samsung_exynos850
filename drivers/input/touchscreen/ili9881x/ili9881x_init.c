@@ -57,7 +57,7 @@ static void touch_set_input_prop_dexpad(struct input_dev *dev)
 	input_set_abs_params(dev, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
 	input_set_abs_params(dev, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
 
-	input_mt_init_slots(dev, 10, INPUT_MT_POINTER);
+	input_mt_init_slots(dev, MAX_TOUCH_NUM, INPUT_MT_POINTER);
 }
 
 static void touch_set_input_prop_proximity(struct input_dev *dev)
