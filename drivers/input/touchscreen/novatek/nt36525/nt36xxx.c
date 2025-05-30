@@ -2262,7 +2262,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 // Rissu: Arghh! Fixing dex touchpad on NVT-ts is REALLY painful due
 // to novatek's spaghetti codes. Hopefully, there's nothing went wrong.
 #if SEC_DEXPAD
-	//---allocate input sec touchpad device---Add commentMore actions
+	//---allocate input sec touchpad device---
 	ts->input_dev_dexpad = input_allocate_device();
 	if (ts->input_dev_dexpad == NULL) {
 		input_err(true, &ts->client->dev, "%s: allocate input dexpad device failed\n", __func__);
