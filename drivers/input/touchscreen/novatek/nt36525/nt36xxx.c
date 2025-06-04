@@ -2272,6 +2272,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 			input_free_device(ts->input_dev_dexpad);
 			ts->input_dev_dexpad = NULL;
 		}
+		goto return_code_bypass;
 	}
 #endif
 
@@ -2623,6 +2624,7 @@ err_malloc_xbuf:
 	}
 	input_err(true, &client->dev, "%s : end - fail unload driver\n", __func__);
 
+return_code_bypass:
 	return ret;
 }
 
