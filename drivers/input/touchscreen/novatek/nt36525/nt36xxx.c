@@ -2265,8 +2265,8 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	//---allocate input sec touchpad device---
 	ts->input_dev_dexpad = input_allocate_device();
 	if (ts->input_dev_dexpad == NULL) {
-		input_err(true, &ts->client->dev, "%s: allocate input dexpad device failed\n", __func__);
 		ret = -ENOMEM;
+		input_err(true, &ts->client->dev, "%s: allocate input dexpad device failed! err: %d\n", __func__, ret);
 		// rather than using goto, just copy!!
 		if (ts->input_dev_dexpad) {
 			input_free_device(ts->input_dev_dexpad);
@@ -2344,26 +2344,27 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	// Oh well, just do it.
 
 	//---set input dexpad device info.---
-
-	ts->input_dev_dexpad->name = "sec_touchpad";
-	ts->input_dev_dexpad->phys = ts->phys;
-	ts->input_dev_dexpad->id.bustype = BUS_SPI;
-
-	ts->input_dev_dexpad->evbit[0] = BIT_MASK(EV_SYN) | BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS) | BIT_MASK(EV_SW);
-	ts->input_dev_dexpad->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-	ts->input_dev_dexpad->keybit[BIT_WORD(BTN_TOOL_FINGER)] = BIT_MASK(BTN_TOOL_FINGER);
-	ts->input_dev_dexpad->keybit[BIT_WORD(KEY_BLACK_UI_GESTURE)] = BIT_MASK(KEY_BLACK_UI_GESTURE);
-	ts->input_dev_dexpad->keybit[BIT_WORD(KEY_INT_CANCEL)] = BIT_MASK(KEY_INT_CANCEL);
-	ts->input_dev_dexpad->propbit[0] = BIT(INPUT_PROP_POINTER);
-	ts->input_dev_dexpad->keybit[BIT_WORD(KEY_HOMEPAGE)] = BIT_MASK(KEY_HOMEPAGE);
-
-	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_POSITION_X, 0, ts->platdata->abs_x_max, 0, 0);
-	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_POSITION_Y, 0, ts->platdata->abs_y_max, 0, 0);
-	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
-	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
-	input_set_abs_params(ts->input_dev_dexpad, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
-
-	input_mt_init_slots(ts->input_dev_dexpad, ts->platdata->max_touch_num, INPUT_MT_POINTER);
+	if (ts->input_dev_dexpad != NULL) {
+		ts->input_dev_dexpad->name = "sec_touchpad";
+		ts->input_dev_dexpad->phys = ts->phys;
+		ts->input_dev_dexpad->id.bustype = BUS_SPI;
+	
+		ts->input_dev_dexpad->evbit[0] = BIT_MASK(EV_SYN) | BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS) | BIT_MASK(EV_SW);
+		ts->input_dev_dexpad->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
+		ts->input_dev_dexpad->keybit[BIT_WORD(BTN_TOOL_FINGER)] = BIT_MASK(BTN_TOOL_FINGER);
+		ts->input_dev_dexpad->keybit[BIT_WORD(KEY_BLACK_UI_GESTURE)] = BIT_MASK(KEY_BLACK_UI_GESTURE);
+		ts->input_dev_dexpad->keybit[BIT_WORD(KEY_INT_CANCEL)] = BIT_MASK(KEY_INT_CANCEL);
+		ts->input_dev_dexpad->propbit[0] = BIT(INPUT_PROP_POINTER);
+		ts->input_dev_dexpad->keybit[BIT_WORD(KEY_HOMEPAGE)] = BIT_MASK(KEY_HOMEPAGE);
+	
+		input_set_abs_params(ts->input_dev_dexpad, ABS_MT_POSITION_X, 0, ts->platdata->abs_x_max, 0, 0);
+		input_set_abs_params(ts->input_dev_dexpad, ABS_MT_POSITION_Y, 0, ts->platdata->abs_y_max, 0, 0);
+		input_set_abs_params(ts->input_dev_dexpad, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
+		input_set_abs_params(ts->input_dev_dexpad, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
+		input_set_abs_params(ts->input_dev_dexpad, ABS_MT_CUSTOM, 0, 0xFFFFFFFF, 0, 0);
+	
+		input_mt_init_slots(ts->input_dev_dexpad, ts->platdata->max_touch_num, INPUT_MT_POINTER);
+	}
 #endif
 
 	//---register input device---
@@ -2384,11 +2385,13 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 #if SEC_DEXPAD
 	//---register input dexpad device---
-	ret = input_register_device(ts->input_dev_dexpad);
-	if (ret) {
-		input_err(true, &client->dev, "register input dexpad device (%s) failed. ret=%d\n", ts->input_dev_dexpad->name, ret);
-		input_unregister_device(ts->input_dev_dexpad);
-		ts->input_dev_dexpad = NULL;
+	if (ts->input_dev_dexpad != NULL) {
+		ret = input_register_device(ts->input_dev_dexpad);
+		if (ret) {
+			input_err(true, &client->dev, "register input dexpad device (%s) failed. ret=%d\n", ts->input_dev_dexpad->name, ret);
+			input_unregister_device(ts->input_dev_dexpad);
+			ts->input_dev_dexpad = NULL;
+		}
 	}
 #endif
 
